@@ -3,33 +3,12 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
 const crypto = require('crypto');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 const router = express.Router();
 
-// --- 1. EMAIL TRANSPORTER SETUP ---
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false, // Must be false for port 587
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  },
-  logger: true,
-  debug: true,
-  tls: {
-    ciphers: 'SSLv3'
-  }
-});
-
-// Verify connection configuration
-transporter.verify(function (error, success) {
-  if (error) {
-    console.log("❌ EMAIL SERVER ERROR:", error);
-  } else {
-    console.log("✅ EMAIL SERVER IS READY");
-  }
-});
+// --- 1. EMAIL SERVICE SETUP (Using Resend - Works on Render) ---
+const resend = new Resend(process.env.RESEND_API_KEY);
+console.log("✅ Resend email service initialized");
 
 // --- 2. REGISTER ROUTE (With Safety Loop) ---
 router.post('/register', async (req, res) => {
@@ -62,31 +41,21 @@ router.post('/register', async (req, res) => {
     try {
       const verificationLink = `https://gear-gik.vercel.app/verify/${verificationToken}`;
 
-      await transporter.sendMail({
-        from: '"GearGIK Support" <' + process.env.EMAIL_USER + '>',
+      await resend.emails.send({
+        from: 'noreply@geargik.com',
         to: email,
         subject: 'Verify your GearGIK Account',
         html: `
-          <h2>Welcome to GearGIK!</h2>
+          <h2>Welcome to GearGIK! 🚗</h2>
           <p>Please click the link below to verify your account:</p>
-          <a href="${verificationLink}" style="padding: 10px 20px; background-color: #6c63ff; color: white; text-decoration: none; border-radius: 5px;">Verify Email</a>
+          <a href="${verificationLink}" style="padding: 10px 20px; background-color: #6c63ff; color: white; text-decoration: none; border-radius: 5px; display: inline-block;">Verify Email</a>
+          <p style="margin-top: 20px; color: #666; font-size: 12px;">This link expires in 24 hours.</p>
         `
       });
 
-<<<<<<< HEAD
-    try {
-      await transporter.sendMail(mailOptions);
-    } catch (emailError) {
-      console.error("Email sending failed:", emailError);
-      // Delete user if email fails
-      await User.deleteOne({ _id: user._id });
-      return res.status(500).json({ error: 'Email configuration error. Please contact support.' });
-    }
-=======
       res.status(201).json({ 
         message: 'Registration successful! Please check your email.' 
       });
->>>>>>> 7b7492f59edb973b4d31d2a665e271337f5c1203
 
     } catch (emailError) {
       // 🚨 SAFETY LOOP: If email fails, delete the user so they can try again!
