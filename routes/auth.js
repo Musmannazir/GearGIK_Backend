@@ -12,8 +12,8 @@ const transporter = nodemailer.createTransport({
   port: 587,
   secure: false,
   auth: {
-    user: 'GearGIK@gmail.com',       // <--- TYPE YOUR REAL EMAIL HERE DIRECTLY
-    pass: 'ibvnqmwscblclfhn'         // <--- TYPE YOUR 16-LETTER APP PASSWORD HERE DIRECTLY
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS   // <--- TYPE YOUR 16-LETTER APP PASSWORD HERE DIRECTLY
   },
   tls: {
     ciphers: 'SSLv3'
