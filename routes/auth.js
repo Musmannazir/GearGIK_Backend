@@ -8,8 +8,7 @@ const router = express.Router();
 
 // --- 1. EMAIL TRANSPORTER SETUP (FIXED) ---
 const transporter = nodemailer.createTransport({
-  // service: 'gmail',     // <--- MAKE SURE THIS IS GONE
-  host: 'smtp.gmail.com',  // Use this instead
+  host: 'smtp.gmail.com', // Ensure 'service: gmail' is NOT here
   port: 587,
   secure: false,
   auth: {
@@ -20,6 +19,17 @@ const transporter = nodemailer.createTransport({
     ciphers: 'SSLv3'
   }
 });
+
+// --- ADD THIS TEST CODE HERE ---
+transporter.verify(function (error, success) {
+  if (error) {
+    console.log("❌ EMAIL CONNECTION FAILED:");
+    console.log(error);
+  } else {
+    console.log("✅ EMAIL SERVER IS READY! Connection successful.");
+  }
+});
+// -------------------------------
 // --- 2. REGISTER ROUTE ---
 router.post('/register', async (req, res) => {
   try {
