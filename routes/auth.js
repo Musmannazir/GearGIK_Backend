@@ -8,18 +8,17 @@ const router = express.Router();
 
 // --- 1. EMAIL TRANSPORTER SETUP (FIXED) ---
 const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com', // Ensure 'service: gmail' is NOT here
+  host: 'smtp.gmail.com',
   port: 587,
   secure: false,
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
+    user: 'GearGIK@gmail.com',       // <--- TYPE YOUR REAL EMAIL HERE DIRECTLY
+    pass: 'ibvnqmwscblclfhn'         // <--- TYPE YOUR 16-LETTER APP PASSWORD HERE DIRECTLY
   },
   tls: {
     ciphers: 'SSLv3'
   }
 });
-
 // --- ADD THIS TEST CODE HERE ---
 transporter.verify(function (error, success) {
   if (error) {
