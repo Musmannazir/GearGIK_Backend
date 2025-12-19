@@ -8,19 +8,18 @@ const router = express.Router();
 
 // --- 1. EMAIL TRANSPORTER SETUP (FIXED) ---
 const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,                 // MUST be 587
-  secure: false,             // MUST be false for Port 587
+  // service: 'gmail',     // <--- MAKE SURE THIS IS GONE
+  host: 'smtp.gmail.com',  // Use this instead
+  port: 587,
+  secure: false,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
   },
   tls: {
-    ciphers: 'SSLv3',        // Helps compatibility
-    rejectUnauthorized: false // Fixes some certificate errors
+    ciphers: 'SSLv3'
   }
 });
-
 // --- 2. REGISTER ROUTE ---
 router.post('/register', async (req, res) => {
   try {
