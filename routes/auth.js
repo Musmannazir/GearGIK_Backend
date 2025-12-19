@@ -10,14 +10,14 @@ const router = express.Router();
 // REPLACE your old transporter with this:
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
-  port: 587,                 // Port 587 is often more reliable on cloud
-  secure: false,             // Use 'false' for port 587
+  port: 587,                 // Port 587 is much more reliable on cloud servers
+  secure: false,             // Must be false for port 587
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
   },
   tls: {
-    ciphers: 'SSLv3'         // Helps with some connection issues
+    ciphers: 'SSLv3'         // Helps compatibility
   }
 });
 // Register
