@@ -7,18 +7,16 @@ const nodemailer = require('nodemailer');
 const router = express.Router();
 
 // Setup Email Transporter
-// REPLACE your old transporter with this:
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
-  port: 587,                 // Port 587 is often more reliable on cloud
-  secure: false,             // Use 'false' for port 587
+  port: 587,
+  secure: false,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
   },
-  tls: {
-    ciphers: 'SSLv3'         // Helps with some connection issues
-  }
+  logger: true,
+  debug: true
 });
 // Register
 router.post('/register', async (req, res) => {
@@ -60,7 +58,14 @@ router.post('/register', async (req, res) => {
       `
     };
 
-    await transporter.sendMail(mailOptions);
+    try {
+      await transporter.sendMail(mailOptions);
+    } catch (emailError) {
+      console.error("Email sending failed:", emailError);
+      // Delete user if email fails
+      await User.deleteOne({ _id: user._id });
+      return res.status(500).json({ error: 'Email configuration error. Please contact support.' });
+    }
 
     res.status(201).json({
       message: 'Registration successful! Please check your email to verify your account.',
