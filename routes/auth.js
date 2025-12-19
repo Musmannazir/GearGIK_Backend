@@ -85,6 +85,10 @@ router.get('/me', auth, async (req, res) => {
 });
 
 // --- UPDATE PROFILE ---
+router.put('/profile', auth, async (req, res) => {
+  try {
+    const { fullName, phone, location, profileImage } = req.body;
+    const user = await User.findByIdAndUpdate(
       req.userId,
       { fullName, phone, location, profileImage, updatedAt: Date.now() },
       { new: true }
