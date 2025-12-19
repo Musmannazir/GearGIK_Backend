@@ -7,17 +7,16 @@ const nodemailer = require('nodemailer');
 const router = express.Router();
 
 // Setup Email Transporter
-// REPLACE your old transporter with this:
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
-  port: 587,                 // Port 587 is much more reliable on cloud servers
+  port: 587,                 // <--- THIS IS CRITICAL
   secure: false,             // Must be false for port 587
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
   },
   tls: {
-    ciphers: 'SSLv3'         // Helps compatibility
+    ciphers: 'SSLv3'         // Helps connect from cloud servers
   }
 });
 // Register
