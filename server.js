@@ -11,7 +11,14 @@ dotenv.config();
 const app = express();
 
 // Middleware
-app.use(cors());
+// REPLACE line 14 with this:
+app.use(cors({
+  origin: [
+    "http://localhost:5173",             // Allow your local testing
+    "https://gear-gik.vercel.app"        // Allow your live Vercel website
+  ],
+  credentials: true                      // REQUIRED for login/tokens to work
+}));
 app.use(express.json());
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
