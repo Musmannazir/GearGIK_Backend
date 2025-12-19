@@ -7,14 +7,19 @@ const nodemailer = require('nodemailer');
 const router = express.Router();
 
 // Setup Email Transporter
+// REPLACE your old transporter with this:
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 587,                 // Port 587 is often more reliable on cloud
+  secure: false,             // Use 'false' for port 587
   auth: {
-    user: process.env.EMAIL_USER, // Your Gmail
-    pass: process.env.EMAIL_PASS  // Your App Password
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  },
+  tls: {
+    ciphers: 'SSLv3'         // Helps with some connection issues
   }
 });
-
 // Register
 router.post('/register', async (req, res) => {
   try {
