@@ -6,20 +6,22 @@ const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const router = express.Router();
 
-// Setup Email Transporter
+// --- 1. EMAIL TRANSPORTER SETUP (FIXED) ---
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
-  port: 587,                 // <--- THIS IS CRITICAL
-  secure: false,             // Must be false for port 587
+  port: 587,                 // MUST be 587
+  secure: false,             // MUST be false for Port 587
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
   },
   tls: {
-    ciphers: 'SSLv3'         // Helps connect from cloud servers
+    ciphers: 'SSLv3',        // Helps compatibility
+    rejectUnauthorized: false // Fixes some certificate errors
   }
 });
-// Register
+
+// --- 2. REGISTER ROUTE ---
 router.post('/register', async (req, res) => {
   try {
     const { fullName, email, password, location } = req.body;
@@ -33,7 +35,7 @@ router.post('/register', async (req, res) => {
     // Generate Verification Token
     const verificationToken = crypto.randomBytes(32).toString('hex');
 
-    // Create new user (Not verified yet)
+    // Create user (Not verified yet)
     const user = new User({
       fullName,
       email,
@@ -59,68 +61,56 @@ router.post('/register', async (req, res) => {
       `
     };
 
+    // Send the email
     await transporter.sendMail(mailOptions);
 
     res.status(201).json({
-      message: 'Registration successful! Please check your email to verify your account.',
+      message: 'Registration successful! Please check your email.',
     });
 
   } catch (error) {
     console.error("Register Error:", error);
-    res.status(500).json({ error: error.message });
+    // If email fails, try to delete the user so they can try again
+    await User.findOneAndDelete({ email: req.body.email });
+    res.status(500).json({ error: "Email could not be sent. Please try again." });
   }
 });
 
-// Verify Email Route (NEW)
+// --- 3. VERIFY ROUTE ---
 router.post('/verify', async (req, res) => {
   try {
     const { token } = req.body;
-    
-    // Find user with this token
     const user = await User.findOne({ verificationToken: token });
     
-    if (!user) {
-      return res.status(400).json({ error: "Invalid or expired token" });
-    }
+    if (!user) return res.status(400).json({ error: "Invalid token" });
 
-    // Verify user and remove token
     user.isVerified = true;
-    user.verificationToken = undefined; // Clear the token
+    user.verificationToken = undefined;
     await user.save();
 
-    res.json({ message: "Email verified successfully! You can now log in." });
-
+    res.json({ message: "Email verified successfully!" });
   } catch (err) {
     res.status(500).json({ error: "Verification failed" });
   }
 });
 
-// Login
+// --- 4. LOGIN ROUTE ---
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-
-    // Find user
     const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(400).json({ error: 'Invalid email or password' });
-    }
-
-    // Check verification status
+    
+    if (!user) return res.status(400).json({ error: 'Invalid email or password' });
+    
+    // Check verification
     if (!user.isVerified) {
       return res.status(400).json({ error: 'Please verify your email first.' });
     }
 
-    // Check password
     const isPasswordValid = await user.comparePassword(password);
-    if (!isPasswordValid) {
-      return res.status(400).json({ error: 'Invalid email or password' });
-    }
+    if (!isPasswordValid) return res.status(400).json({ error: 'Invalid email or password' });
 
-    // Generate JWT token
-    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
-      expiresIn: '7d',
-    });
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
     res.json({
       message: 'Login successful',
@@ -138,7 +128,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Get current user
+// --- 5. OTHER ROUTES ---
 router.get('/me', auth, async (req, res) => {
   try {
     const user = await User.findById(req.userId).select('-password');
@@ -148,21 +138,15 @@ router.get('/me', auth, async (req, res) => {
   }
 });
 
-// Update profile
 router.put('/profile', auth, async (req, res) => {
   try {
     const { fullName, phone, location, profileImage } = req.body;
-    
     const user = await User.findByIdAndUpdate(
       req.userId,
       { fullName, phone, location, profileImage, updatedAt: Date.now() },
       { new: true }
     ).select('-password');
-
-    res.json({
-      message: 'Profile updated successfully',
-      user,
-    });
+    res.json({ message: 'Profile updated', user });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
