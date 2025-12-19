@@ -34,24 +34,44 @@ router.post('/register', async (req, res) => {
   try {
     const { fullName, email, password, location } = req.body;
 
-    // Check if user exists
+    // 1. Check if user exists
     const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ error: 'Email already registered' });
-    }
+    if (existingUser) return res.status(400).json({ error: 'Email already registered' });
 
-    // Generate Verification Token
+    // 2. Generate Token
     const verificationToken = crypto.randomBytes(32).toString('hex');
 
-    // Create user (Not verified yet)
+    // 3. Save User
     const user = new User({
-      fullName,
-      email,
-      password,
-      location: location || 'FME',
-      verificationToken,
-      isVerified: false
+      fullName, email, password, location, verificationToken, isVerified: false
     });
+    await user.save();
+
+    // 4. Send Email
+    try {
+      const verificationLink = `https://gear-gik.vercel.app/verify/${verificationToken}`;
+      
+      await transporter.sendMail({
+        from: '"GearGIK" <' + process.env.EMAIL_USER + '>',
+        to: email,
+        subject: 'Verify your Account',
+        html: `<a href="${verificationLink}">Click here to verify</a>`
+      });
+
+      res.status(201).json({ message: 'Success! Check your email.' });
+
+    } catch (emailError) {
+      // 🚨 CRITICAL FIX: If email fails, delete the user!
+      console.error("❌ EMAIL FAILED:", emailError);
+      await User.findOneAndDelete({ email }); 
+      throw new Error("Email connection failed. User deleted. Try again.");
+    }
+
+  } catch (error) {
+    console.error("General Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
     await user.save();
 
