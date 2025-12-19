@@ -2,15 +2,9 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
-const crypto = require('crypto');
-const { Resend } = require('resend');
 const router = express.Router();
 
-// --- 1. EMAIL SERVICE SETUP (Using Resend - Works on Render) ---
-const resend = new Resend(process.env.RESEND_API_KEY);
-console.log("✅ Resend email service initialized");
-
-// --- 2. REGISTER ROUTE (With Safety Loop) ---
+// --- REGISTER ROUTE ---
 router.post('/register', async (req, res) => {
   try {
     const { fullName, email, password, location } = req.body;
@@ -21,48 +15,29 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Email already registered' });
     }
 
-    // Generate Token
-    const verificationToken = crypto.randomBytes(32).toString('hex');
-
-    // Create user (temporarily)
+    // Create new user
     const user = new User({
       fullName,
       email,
       password,
-      location: location || 'FME',
-      verificationToken,
-      isVerified: false
+      location: location || 'FME'
     });
 
-    // Save to DB
     await user.save();
 
-    // Try to send email
-    try {
-      const verificationLink = `https://gear-gik.vercel.app/verify/${verificationToken}`;
+    // Generate token
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
-      await resend.emails.send({
-        from: 'noreply@geargik.com',
-        to: email,
-        subject: 'Verify your GearGIK Account',
-        html: `
-          <h2>Welcome to GearGIK! 🚗</h2>
-          <p>Please click the link below to verify your account:</p>
-          <a href="${verificationLink}" style="padding: 10px 20px; background-color: #6c63ff; color: white; text-decoration: none; border-radius: 5px; display: inline-block;">Verify Email</a>
-          <p style="margin-top: 20px; color: #666; font-size: 12px;">This link expires in 24 hours.</p>
-        `
-      });
-
-      res.status(201).json({ 
-        message: 'Registration successful! Please check your email.' 
-      });
-
-    } catch (emailError) {
-      // 🚨 SAFETY LOOP: If email fails, delete the user so they can try again!
-      console.error("❌ Email failed to send:", emailError);
-      await User.findOneAndDelete({ email: email });
-      return res.status(500).json({ error: "Email failed to send. Please try again." });
-    }
+    res.status(201).json({
+      message: 'Registration successful!',
+      token,
+      user: {
+        id: user._id,
+        fullName: user.fullName,
+        email: user.email,
+        location: user.location
+      }
+    });
 
   } catch (error) {
     console.error("Register Error:", error);
@@ -70,37 +45,13 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// --- 3. VERIFY ROUTE ---
-router.post('/verify', async (req, res) => {
-  try {
-    const { token } = req.body;
-    
-    const user = await User.findOne({ verificationToken: token });
-    if (!user) {
-      return res.status(400).json({ error: "Invalid or expired token" });
-    }
-
-    user.isVerified = true;
-    user.verificationToken = undefined;
-    await user.save();
-
-    res.json({ message: "Email verified successfully!" });
-  } catch (err) {
-    res.status(500).json({ error: "Verification failed" });
-  }
-});
-
-// --- 4. LOGIN ROUTE ---
+// --- LOGIN ROUTE ---
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     const user = await User.findOne({ email });
 
     if (!user) return res.status(400).json({ error: 'Invalid email or password' });
-
-    if (!user.isVerified) {
-      return res.status(400).json({ error: 'Please verify your email first.' });
-    }
 
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) return res.status(400).json({ error: 'Invalid email or password' });
@@ -123,7 +74,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// --- 5. OTHER ROUTES ---
+// --- GET CURRENT USER ---
 router.get('/me', auth, async (req, res) => {
   try {
     const user = await User.findById(req.userId).select('-password');
@@ -133,10 +84,7 @@ router.get('/me', auth, async (req, res) => {
   }
 });
 
-router.put('/profile', auth, async (req, res) => {
-  try {
-    const { fullName, phone, location, profileImage } = req.body;
-    const user = await User.findByIdAndUpdate(
+// --- UPDATE PROFILE ---
       req.userId,
       { fullName, phone, location, profileImage, updatedAt: Date.now() },
       { new: true }
