@@ -6,101 +6,85 @@ const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const router = express.Router();
 
-// --- 1. EMAIL TRANSPORTER SETUP (FIXED) ---
+// --- 1. EMAIL TRANSPORTER SETUP ---
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
   port: 587,
-  secure: false,
+  secure: false, // Must be false for port 587
   auth: {
     user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS   // <--- TYPE YOUR 16-LETTER APP PASSWORD HERE DIRECTLY
+    pass: process.env.EMAIL_PASS
   },
   tls: {
     ciphers: 'SSLv3'
   }
 });
-// --- ADD THIS TEST CODE HERE ---
+
+// Verify connection configuration
 transporter.verify(function (error, success) {
   if (error) {
-    console.log("❌ EMAIL CONNECTION FAILED:");
-    console.log(error);
+    console.log("❌ EMAIL SERVER ERROR:", error);
   } else {
-    console.log("✅ EMAIL SERVER IS READY! Connection successful.");
+    console.log("✅ EMAIL SERVER IS READY");
   }
 });
-// -------------------------------
-// --- 2. REGISTER ROUTE ---
+
+// --- 2. REGISTER ROUTE (With Safety Loop) ---
 router.post('/register', async (req, res) => {
   try {
     const { fullName, email, password, location } = req.body;
 
-    // 1. Check if user exists
+    // Check if user exists
     const existingUser = await User.findOne({ email });
-    if (existingUser) return res.status(400).json({ error: 'Email already registered' });
+    if (existingUser) {
+      return res.status(400).json({ error: 'Email already registered' });
+    }
 
-    // 2. Generate Token
+    // Generate Token
     const verificationToken = crypto.randomBytes(32).toString('hex');
 
-    // 3. Save User
+    // Create user (temporarily)
     const user = new User({
-      fullName, email, password, location, verificationToken, isVerified: false
+      fullName,
+      email,
+      password,
+      location: location || 'FME',
+      verificationToken,
+      isVerified: false
     });
+
+    // Save to DB
     await user.save();
 
-    // 4. Send Email
+    // Try to send email
     try {
       const verificationLink = `https://gear-gik.vercel.app/verify/${verificationToken}`;
-      
+
       await transporter.sendMail({
-        from: '"GearGIK" <' + process.env.EMAIL_USER + '>',
+        from: '"GearGIK Support" <' + process.env.EMAIL_USER + '>',
         to: email,
-        subject: 'Verify your Account',
-        html: `<a href="${verificationLink}">Click here to verify</a>`
+        subject: 'Verify your GearGIK Account',
+        html: `
+          <h2>Welcome to GearGIK!</h2>
+          <p>Please click the link below to verify your account:</p>
+          <a href="${verificationLink}" style="padding: 10px 20px; background-color: #6c63ff; color: white; text-decoration: none; border-radius: 5px;">Verify Email</a>
+        `
       });
 
-      res.status(201).json({ message: 'Success! Check your email.' });
+      res.status(201).json({ 
+        message: 'Registration successful! Please check your email.' 
+      });
 
     } catch (emailError) {
-      // 🚨 CRITICAL FIX: If email fails, delete the user!
-      console.error("❌ EMAIL FAILED:", emailError);
-      await User.findOneAndDelete({ email }); 
-      throw new Error("Email connection failed. User deleted. Try again.");
+      // 🚨 SAFETY LOOP: If email fails, delete the user so they can try again!
+      console.error("❌ Email failed to send:", emailError);
+      await User.findOneAndDelete({ email: email });
+      return res.status(500).json({ error: "Email failed to send. Please try again." });
     }
 
   } catch (error) {
-    console.error("General Error:", error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-    await user.save();
-
-    // Send Verification Email
-    const verificationLink = `https://gear-gik.vercel.app/verify/${verificationToken}`;
-
-    const mailOptions = {
-      from: '"GearGIK Support" <' + process.env.EMAIL_USER + '>',
-      to: email,
-      subject: 'Verify your GearGIK Account',
-      html: `
-        <h2>Welcome to GearGIK!</h2>
-        <p>Please click the link below to verify your account:</p>
-        <a href="${verificationLink}" style="padding: 10px 20px; background-color: #6c63ff; color: white; text-decoration: none; border-radius: 5px;">Verify Email</a>
-      `
-    };
-
-    // Send the email
-    await transporter.sendMail(mailOptions);
-
-    res.status(201).json({
-      message: 'Registration successful! Please check your email.',
-    });
-
-  } catch (error) {
     console.error("Register Error:", error);
-    // If email fails, try to delete the user so they can try again
-    await User.findOneAndDelete({ email: req.body.email });
-    res.status(500).json({ error: "Email could not be sent. Please try again." });
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -108,9 +92,11 @@ router.post('/register', async (req, res) => {
 router.post('/verify', async (req, res) => {
   try {
     const { token } = req.body;
-    const user = await User.findOne({ verificationToken: token });
     
-    if (!user) return res.status(400).json({ error: "Invalid token" });
+    const user = await User.findOne({ verificationToken: token });
+    if (!user) {
+      return res.status(400).json({ error: "Invalid or expired token" });
+    }
 
     user.isVerified = true;
     user.verificationToken = undefined;
@@ -127,10 +113,9 @@ router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     const user = await User.findOne({ email });
-    
+
     if (!user) return res.status(400).json({ error: 'Invalid email or password' });
-    
-    // Check verification
+
     if (!user.isVerified) {
       return res.status(400).json({ error: 'Please verify your email first.' });
     }
@@ -149,7 +134,7 @@ router.post('/login', async (req, res) => {
         email: user.email,
         location: user.location,
         rating: user.rating,
-      },
+      }
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
