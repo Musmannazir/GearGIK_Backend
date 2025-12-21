@@ -10,6 +10,7 @@ router.get('/', async (req, res) => {
   try {
     const { type, location, minPrice, maxPrice } = req.query;
 
+    // By default only show available vehicles
     let filter = { isAvailable: true };
 
     if (type) filter.type = type;
@@ -49,7 +50,8 @@ router.get('/:id', async (req, res) => {
 // Add new vehicle (authenticated users)
 router.post('/', auth, async (req, res) => {
   try {
-    const { name, type, pricePerHour, location, image, features, phone, regNo } = req.body;
+    // ✅ NEW: maxDuration added to destructuring
+    const { name, type, pricePerHour, maxDuration, location, image, features, phone, regNo } = req.body;
 
     const owner = await User.findById(req.userId);
 
@@ -60,6 +62,7 @@ router.post('/', auth, async (req, res) => {
       ownerPhone: phone || owner.phone || '',
       ownerRegNo: regNo || '',
       pricePerHour,
+      maxDuration: maxDuration || 24, // ✅ Default to 24h if not provided
       location,
       image,
       features: features || [],
@@ -91,14 +94,22 @@ router.put('/:id', auth, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized to update this vehicle' });
     }
 
-    const { name, type, pricePerHour, location, features, isAvailable } = req.body;
+    // ✅ NEW: maxDuration added here
+    const { name, type, pricePerHour, maxDuration, location, features, isAvailable, image, phone, regNo } = req.body;
 
     vehicle.name = name || vehicle.name;
     vehicle.type = type || vehicle.type;
     vehicle.pricePerHour = pricePerHour || vehicle.pricePerHour;
+    vehicle.maxDuration = maxDuration || vehicle.maxDuration; // ✅ Update maxDuration
     vehicle.location = location || vehicle.location;
     vehicle.features = features || vehicle.features;
     vehicle.isAvailable = isAvailable !== undefined ? isAvailable : vehicle.isAvailable;
+    
+    // Also allow updating image, phone, and regNo if provided
+    if (image) vehicle.image = image;
+    if (phone) vehicle.ownerPhone = phone;
+    if (regNo) vehicle.ownerRegNo = regNo;
+    
     vehicle.updatedAt = Date.now();
 
     await vehicle.save();
