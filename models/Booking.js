@@ -6,6 +6,7 @@ const bookingSchema = new mongoose.Schema({
     ref: 'User',
     required: true,
   },
+  
   renterPhone: {
     type: String,
     default: '',
@@ -32,6 +33,14 @@ const bookingSchema = new mongoose.Schema({
     type: Number,
     required: true,
   },
+  
+  // --- NEW FIELD: Track seats for this booking ---
+  seatsBooked: {
+    type: Number,
+    default: 1, // Default to 1 (full car or 1 seat)
+  },
+  // ----------------------------------------------
+
   status: {
     type: String,
     enum: ['pending', 'confirmed', 'in-progress', 'completed', 'cancelled'],

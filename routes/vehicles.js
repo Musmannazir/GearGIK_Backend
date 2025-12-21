@@ -5,19 +5,33 @@ const auth = require('../middleware/auth');
 
 const router = express.Router();
 
-// Get all vehicles
+// Get all vehicles (Updated with Seat Sharing Filter)
 router.get('/', async (req, res) => {
   try {
-    const { type, location, minPrice, maxPrice } = req.query;
+    const { type, location, minPrice, maxPrice, isShared } = req.query;
 
+    // Default: Show available vehicles
     let filter = { isAvailable: true };
 
-    if (type) filter.type = type;
+    if (type && type !== 'All Types') filter.type = type;
     if (location) filter.location = location;
+    
+    // --- SEAT SHARING LOGIC ---
+    if (isShared === 'true') {
+      filter.isShared = true;
+      filter.seatsAvailable = { $gt: 0 }; // Only show cars with seats left
+    } else {
+      // If user wants full rental, hide cars that are strictly for sharing
+      // (Optional: remove this line if you want to see everything mixed)
+      filter.isShared = false; 
+    }
+
     if (minPrice || maxPrice) {
-      filter.pricePerHour = {};
-      if (minPrice) filter.pricePerHour.$gte = Number(minPrice);
-      if (maxPrice) filter.pricePerHour.$lte = Number(maxPrice);
+      // Check pricePerSeat OR pricePerHour based on mode
+      const priceField = isShared === 'true' ? 'pricePerSeat' : 'pricePerHour';
+      filter[priceField] = {};
+      if (minPrice) filter[priceField].$gte = Number(minPrice);
+      if (maxPrice) filter[priceField].$lte = Number(maxPrice);
     }
 
     const vehicles = await Vehicle.find(filter)
@@ -35,23 +49,27 @@ router.get('/:id', async (req, res) => {
   try {
     const vehicle = await Vehicle.findById(req.params.id)
       .populate('owner', 'fullName rating reviews email phone');
-
-    if (!vehicle) {
-      return res.status(404).json({ error: 'Vehicle not found' });
-    }
-
+    if (!vehicle) return res.status(404).json({ error: 'Vehicle not found' });
     res.json(vehicle);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Add new vehicle (authenticated users)
+// Add new vehicle (Updated for Seat Sharing)
 router.post('/', auth, async (req, res) => {
   try {
-    const { name, type, pricePerHour, location, image, features, phone, regNo } = req.body;
+    const { 
+      name, type, pricePerHour, maxDuration, location, 
+      image, features, phone, regNo, 
+      isShared, pricePerSeat 
+    } = req.body;
 
     const owner = await User.findById(req.userId);
+
+    // LOGIC: Only Cars can be shared (No bikes)
+    const isCar = ['Sedan', 'SUV', 'Hatchback', 'Coupe', 'Truck'].includes(type);
+    const validShared = isCar && isShared;
 
     const vehicle = new Vehicle({
       name,
@@ -59,76 +77,66 @@ router.post('/', auth, async (req, res) => {
       owner: req.userId,
       ownerPhone: phone || owner.phone || '',
       ownerRegNo: regNo || '',
-      pricePerHour,
+      
+      // If sharing, pricePerHour is 0 (or irrelevant)
+      pricePerHour: validShared ? 0 : pricePerHour,
+      maxDuration: maxDuration || 24,
+      
       location,
       image,
       features: features || [],
+      
+      // --- NEW FIELDS ---
+      isShared: validShared,
+      pricePerSeat: validShared ? Number(pricePerSeat) : 0,
+      seatsAvailable: validShared ? 4 : 0, // Default 4 seats
     });
 
     await vehicle.save();
     await vehicle.populate('owner', 'fullName rating reviews');
 
-    res.status(201).json({
-      message: 'Vehicle added successfully',
-      vehicle,
-    });
+    res.status(201).json({ message: 'Vehicle added successfully', vehicle });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Update vehicle (owner only)
+// Update vehicle
 router.put('/:id', auth, async (req, res) => {
   try {
     const vehicle = await Vehicle.findById(req.params.id);
-
-    if (!vehicle) {
-      return res.status(404).json({ error: 'Vehicle not found' });
-    }
-
-    // Check if user is owner
+    if (!vehicle) return res.status(404).json({ error: 'Vehicle not found' });
     if (vehicle.owner.toString() !== req.userId) {
-      return res.status(403).json({ error: 'Not authorized to update this vehicle' });
+      return res.status(403).json({ error: 'Not authorized' });
     }
 
-    const { name, type, pricePerHour, location, features, isAvailable } = req.body;
-
-    vehicle.name = name || vehicle.name;
-    vehicle.type = type || vehicle.type;
-    vehicle.pricePerHour = pricePerHour || vehicle.pricePerHour;
-    vehicle.location = location || vehicle.location;
-    vehicle.features = features || vehicle.features;
-    vehicle.isAvailable = isAvailable !== undefined ? isAvailable : vehicle.isAvailable;
-    vehicle.updatedAt = Date.now();
-
-    await vehicle.save();
-    await vehicle.populate('owner', 'fullName rating reviews');
-
-    res.json({
-      message: 'Vehicle updated successfully',
-      vehicle,
+    const updates = req.body;
+    Object.keys(updates).forEach((key) => {
+      vehicle[key] = updates[key];
     });
+
+    // Reset seats if switching to shared mode
+    if (updates.isShared && !vehicle.isShared) {
+      vehicle.seatsAvailable = 4;
+    }
+
+    vehicle.updatedAt = Date.now();
+    await vehicle.save();
+    res.json({ message: 'Vehicle updated successfully', vehicle });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Delete vehicle (owner only)
+// Delete vehicle
 router.delete('/:id', auth, async (req, res) => {
   try {
     const vehicle = await Vehicle.findById(req.params.id);
-
-    if (!vehicle) {
-      return res.status(404).json({ error: 'Vehicle not found' });
-    }
-
-    // Check if user is owner
+    if (!vehicle) return res.status(404).json({ error: 'Vehicle not found' });
     if (vehicle.owner.toString() !== req.userId) {
-      return res.status(403).json({ error: 'Not authorized to delete this vehicle' });
+      return res.status(403).json({ error: 'Not authorized' });
     }
-
     await Vehicle.findByIdAndDelete(req.params.id);
-
     res.json({ message: 'Vehicle deleted successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -140,7 +148,6 @@ router.get('/owner/:userId', async (req, res) => {
   try {
     const vehicles = await Vehicle.find({ owner: req.params.userId })
       .populate('owner', 'fullName rating reviews');
-
     res.json(vehicles);
   } catch (error) {
     res.status(500).json({ error: error.message });
