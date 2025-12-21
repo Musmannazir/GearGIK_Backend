@@ -6,23 +6,22 @@ const nodemailer = require('nodemailer');
 const crypto = require('crypto');
 const router = express.Router();
 
-// Email service setup
+// --- 1. EMAIL CONFIGURATION (Fixed for Render) ---
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
-  port: 587,
-  secure: false,
+  port: 465,               // ✅ Use Port 465 for SSL (Works better on Render)
+  secure: true,            // ✅ Must be true for port 465
   auth: {
-    user: 'nazirusman721@gmail.com',
-    pass: 'bfcc mibg ipax zgja'
+    user: process.env.EMAIL_USER, // Set this in Render Dashboard
+    pass: process.env.EMAIL_PASS  // Set this in Render Dashboard
   },
-  tls: {
-    rejectUnauthorized: false
-  }
+  connectionTimeout: 10000, // Fail fast if connection hangs
 });
 
+// Optional: Verify connection on startup
 transporter.verify((error, success) => {
   if (error) {
-    console.error('Email service error:', error);
+    console.error('⚠️ Email service warning:', error.message);
   } else {
     console.log('✅ Email service is ready');
   }
@@ -37,7 +36,7 @@ const sendVerificationEmail = async (email, fullName, token) => {
   const verificationLink = `${baseUrl}/verify-email/${token}`;
 
   const mailOptions = {
-    from: 'nazirusman721@gmail.com',
+    from: process.env.EMAIL_USER, // Use the env variable here too
     to: email,
     subject: 'GearGIK - Email Verification Required',
     html: `
@@ -64,17 +63,10 @@ const sendVerificationEmail = async (email, fullName, token) => {
     `
   };
 
-  try {
-    await transporter.sendMail(mailOptions);
-    console.log('✅ Verification email sent to:', email);
-    return true;
-  } catch (error) {
-    console.error('❌ Email sending failed:', error);
-    throw error;
-  }
+  return transporter.sendMail(mailOptions);
 };
 
-// --- REGISTER ROUTE ---
+// --- 2. REGISTER ROUTE (Non-Blocking) ---
 router.post('/register', async (req, res) => {
   try {
     const { fullName, email, password, location } = req.body;
@@ -102,23 +94,25 @@ router.post('/register', async (req, res) => {
 
     await user.save();
 
-    // Send verification email
-    try {
-      await sendVerificationEmail(email, fullName, verificationToken);
-    } catch (emailError) {
-      console.error('Failed to send verification email:', emailError);
-      // Don't fail the signup, just log the error
-    }
-
+    // ✅ INSTANT RESPONSE: Send success to React immediately
     res.status(201).json({
       message: 'Registration successful! Please check your email to verify your account.',
       requiresEmailVerification: true,
       email: email
     });
 
+    // ✅ BACKGROUND PROCESS: Send email *after* response
+    // We do NOT use 'await' here so the user doesn't have to wait
+    sendVerificationEmail(email, fullName, verificationToken)
+      .then(() => console.log(`✅ Email sent successfully to: ${email}`))
+      .catch((err) => console.error(`❌ Background email failed for ${email}:`, err.message));
+
   } catch (error) {
     console.error("Register Error:", error);
-    res.status(500).json({ error: error.message });
+    // Only send error if we haven't sent a success response yet
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message });
+    }
   }
 });
 
@@ -153,7 +147,6 @@ router.post('/verify-email/:token', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
 
 // --- LOGIN ROUTE ---
 router.post('/login', async (req, res) => {
