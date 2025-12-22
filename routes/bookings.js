@@ -66,6 +66,21 @@ router.post('/', auth, async (req, res) => {
     await booking.save();
     await vehicle.save(); // Update vehicle seats/availability
 
+    // --- NEW: PLATFORM FEE LOGIC ---
+    // Add 20 rupees to the car owner's debt
+    try {
+      const carOwner = await User.findById(vehicle.owner);
+      if (carOwner) {
+        carOwner.debt = (carOwner.debt || 0) + 20;
+        await carOwner.save();
+        console.log(`Charged 20 PKR platform fee to owner: ${carOwner.email}`);
+      }
+    } catch (err) {
+      console.error("Error updating owner debt:", err);
+      // We don't stop the booking if this fails, but we log it.
+    }
+    // -------------------------------
+
     await booking.populate([
       { path: 'renter', select: 'fullName email phone' },
       { path: 'vehicle', select: 'name type pricePerHour pricePerSeat owner' },
@@ -118,13 +133,15 @@ router.put('/:id', auth, async (req, res) => {
 
     // --- CANCELLATION LOGIC (Restore Seats) ---
     if (status === 'cancelled' && booking.status !== 'cancelled') {
-      if (vehicle.isShared) {
-        const seatsToRestore = booking.seatsBooked || 1;
-        vehicle.seatsAvailable += seatsToRestore;
-        if (vehicle.seatsAvailable > 4) vehicle.seatsAvailable = 4;
+      if (vehicle) {
+          if (vehicle.isShared) {
+            const seatsToRestore = booking.seatsBooked || 1;
+            vehicle.seatsAvailable += seatsToRestore;
+            if (vehicle.seatsAvailable > 4) vehicle.seatsAvailable = 4;
+          }
+          vehicle.isAvailable = true; // Make available again
+          await vehicle.save();
       }
-      vehicle.isAvailable = true; // Make available again
-      await vehicle.save();
     }
 
     if (status) booking.status = status;
@@ -137,13 +154,6 @@ router.put('/:id', auth, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-// After successfully saving the booking:
-const vehicle = await Vehicle.findById(req.body.vehicleId);
-const carOwner = await User.findById(vehicle.owner);
-
-// Add 20 rupees to the owner's debt
-carOwner.debt += 20;
-await carOwner.save();
 
 // Cancel Booking (Delete)
 router.delete('/:id', auth, async (req, res) => {
@@ -154,13 +164,15 @@ router.delete('/:id', auth, async (req, res) => {
     const vehicle = await Vehicle.findById(booking.vehicle);
     
     // Restore Seats
-    if (vehicle.isShared) {
-       const seatsToRestore = booking.seatsBooked || 1;
-       vehicle.seatsAvailable += seatsToRestore;
-       if (vehicle.seatsAvailable > 4) vehicle.seatsAvailable = 4;
+    if (vehicle) {
+        if (vehicle.isShared) {
+           const seatsToRestore = booking.seatsBooked || 1;
+           vehicle.seatsAvailable += seatsToRestore;
+           if (vehicle.seatsAvailable > 4) vehicle.seatsAvailable = 4;
+        }
+        vehicle.isAvailable = true;
+        await vehicle.save();
     }
-    vehicle.isAvailable = true;
-    await vehicle.save();
 
     booking.status = 'cancelled';
     await booking.save();
