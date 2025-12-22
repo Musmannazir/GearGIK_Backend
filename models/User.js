@@ -2,6 +2,18 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
 const userSchema = new mongoose.Schema({
+  debt: { 
+    type: Number, 
+    default: 0 
+  },
+  adsPosted: { 
+    type: Number, 
+    default: 0 
+  },
+  isApproved: { 
+    type: Boolean, 
+    default: false 
+  },
   fullName: {
     type: String,
     required: true,
