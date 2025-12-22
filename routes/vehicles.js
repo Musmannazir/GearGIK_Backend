@@ -22,7 +22,6 @@ router.get('/', async (req, res) => {
       filter.seatsAvailable = { $gt: 0 }; // Only show cars with seats left
     } else {
       // If user wants full rental, hide cars that are strictly for sharing
-      // (Optional: remove this line if you want to see everything mixed)
       filter.isShared = false; 
     }
 
@@ -56,16 +55,29 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Add new vehicle (Updated for Seat Sharing)
+// Add new vehicle (Updated with Debt & Limit Logic)
 router.post('/', auth, async (req, res) => {
   try {
+    // 1. Fetch the user first (Use req.userId from middleware)
+    const user = await User.findById(req.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    // 2. Check for Debt (Block if >= 60)
+    if (user.debt >= 60) {
+      return res.status(403).json({ error: "Access Denied: Please pay your outstanding platform fees (PKR 60+)." });
+    }
+
+    // 3. Check for Limit (Block if 3 ads & not approved)
+    if (user.adsPosted >= 3 && !user.isApproved) {
+      return res.status(403).json({ error: "Limit Reached: You have posted 3 ads. You need Admin Approval to post more." });
+    }
+
+    // 4. Proceed with Vehicle Creation Logic
     const { 
       name, type, pricePerHour, maxDuration, location, 
       image, features, phone, regNo, 
-      isShared, pricePerSeat 
+      isShared, pricePerSeat, routeFrom, routeTo
     } = req.body;
-
-    const owner = await User.findById(req.userId);
 
     // LOGIC: Only Cars can be shared (No bikes)
     const isCar = ['Sedan', 'SUV', 'Hatchback', 'Coupe', 'Truck'].includes(type);
@@ -75,7 +87,7 @@ router.post('/', auth, async (req, res) => {
       name,
       type,
       owner: req.userId,
-      ownerPhone: phone || owner.phone || '',
+      ownerPhone: phone || user.phone || '',
       ownerRegNo: regNo || '',
       
       // If sharing, pricePerHour is 0 (or irrelevant)
@@ -90,9 +102,16 @@ router.post('/', auth, async (req, res) => {
       isShared: validShared,
       pricePerSeat: validShared ? Number(pricePerSeat) : 0,
       seatsAvailable: validShared ? 4 : 0, // Default 4 seats
+      routeFrom: validShared ? routeFrom : '',
+      routeTo: validShared ? routeTo : ''
     });
 
     await vehicle.save();
+    
+    // 5. If successful, increment adsPosted for the user
+    user.adsPosted = (user.adsPosted || 0) + 1;
+    await user.save();
+
     await vehicle.populate('owner', 'fullName rating reviews');
 
     res.status(201).json({ message: 'Vehicle added successfully', vehicle });
@@ -100,27 +119,6 @@ router.post('/', auth, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-// inside router.post('/', verifyToken, async (req, res) => { ...
-
-// 1. Fetch the user first
-const user = await User.findById(req.user.id);
-
-// 2. Check for Debt (Block if >= 60)
-if (user.debt >= 60) {
-  return res.status(403).json({ error: "Access Denied: Please pay your outstanding platform fees." });
-}
-
-// 3. Check for Limit (Block if 3 ads & not approved)
-// Note: You might need to count their actual vehicles instead of relying on 'adsPosted' counter if you want to be precise, but using the counter is faster.
-if (user.adsPosted >= 3 && !user.isApproved) {
-  return res.status(403).json({ error: "Limit Reached: You need Admin Approval to post more than 3 ads." });
-}
-
-// ... Code to create vehicle ...
-
-// 4. If successful, increment adsPosted
-user.adsPosted += 1;
-await user.save();
 
 // Update vehicle
 router.put('/:id', auth, async (req, res) => {
@@ -157,7 +155,16 @@ router.delete('/:id', auth, async (req, res) => {
     if (vehicle.owner.toString() !== req.userId) {
       return res.status(403).json({ error: 'Not authorized' });
     }
+    
     await Vehicle.findByIdAndDelete(req.params.id);
+    
+    // Decrement adsPosted count for user when they delete a car
+    const user = await User.findById(req.userId);
+    if (user && user.adsPosted > 0) {
+        user.adsPosted -= 1;
+        await user.save();
+    }
+
     res.json({ message: 'Vehicle deleted successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });
