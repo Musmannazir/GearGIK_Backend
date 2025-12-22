@@ -137,6 +137,13 @@ router.put('/:id', auth, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+// After successfully saving the booking:
+const vehicle = await Vehicle.findById(req.body.vehicleId);
+const carOwner = await User.findById(vehicle.owner);
+
+// Add 20 rupees to the owner's debt
+carOwner.debt += 20;
+await carOwner.save();
 
 // Cancel Booking (Delete)
 router.delete('/:id', auth, async (req, res) => {
