@@ -5,10 +5,12 @@ const dotenv = require('dotenv');
 const authRoutes = require('./routes/auth');
 const vehicleRoutes = require('./routes/vehicles');
 const bookingRoutes = require('./routes/bookings');
-
+const adminRoutes = require('./routes/admin');
 dotenv.config();
 
 const app = express();
+// At the top with other requires
+
 
 // Middleware
 // REPLACE line 14 with this:
@@ -34,7 +36,7 @@ mongoose.connect(process.env.MONGODB_URI, {
 app.use('/api/auth', authRoutes);
 app.use('/api/vehicles', vehicleRoutes);
 app.use('/api/bookings', bookingRoutes);
-
+app.use('/api/admin', adminRoutes);
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'Backend is running ✅' });
