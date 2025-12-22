@@ -100,6 +100,27 @@ router.post('/', auth, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+// inside router.post('/', verifyToken, async (req, res) => { ...
+
+// 1. Fetch the user first
+const user = await User.findById(req.user.id);
+
+// 2. Check for Debt (Block if >= 60)
+if (user.debt >= 60) {
+  return res.status(403).json({ error: "Access Denied: Please pay your outstanding platform fees." });
+}
+
+// 3. Check for Limit (Block if 3 ads & not approved)
+// Note: You might need to count their actual vehicles instead of relying on 'adsPosted' counter if you want to be precise, but using the counter is faster.
+if (user.adsPosted >= 3 && !user.isApproved) {
+  return res.status(403).json({ error: "Limit Reached: You need Admin Approval to post more than 3 ads." });
+}
+
+// ... Code to create vehicle ...
+
+// 4. If successful, increment adsPosted
+user.adsPosted += 1;
+await user.save();
 
 // Update vehicle
 router.put('/:id', auth, async (req, res) => {
